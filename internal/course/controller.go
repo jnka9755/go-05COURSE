@@ -1,16 +1,16 @@
 package course
 
 import (
-	"encoding/json"
-	"net/http"
-	"strconv"
+	"context"
+	"errors"
+	"fmt"
 
-	"github.com/gorilla/mux"
 	"github.com/jnka9755/go-05META/meta"
+	"github.com/jnka9755/go-05RESPONSE/response"
 )
 
 type (
-	Controller func(w http.ResponseWriter, r *http.Request)
+	Controller func(ctx context.Context, request interface{}) (interface{}, error)
 
 	Endpoints struct {
 		Create Controller
@@ -26,17 +26,25 @@ type (
 		EndDate   string `json:"end_date"`
 	}
 
+	GetReq struct {
+		ID string
+	}
+
+	GetAllReq struct {
+		Name  string
+		Limit int
+		Page  int
+	}
+
 	UpdateReq struct {
+		ID        string
 		Name      *string `json:"name"`
 		StartDate *string `json:"start_date"`
 		EndDate   *string `json:"end_date"`
 	}
 
-	Response struct {
-		Status int         `json:"status"`
-		Data   interface{} `json:"data,omitempty"`
-		Err    string      `json:"error,omitempty"`
-		Meta   *meta.Meta  `json:"meta,omitempty"`
+	DeleteReq struct {
+		ID string
 	}
 
 	Config struct {
@@ -56,156 +64,128 @@ func MakeEndpoints(b Business, config Config) Endpoints {
 }
 
 func makeCreateEndpoint(b Business) Controller {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
 
-		var request CreateReq
+		req := request.(CreateReq)
 
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: "invalid request format"})
-			return
+		if req.Name == "" {
+			return nil, response.BadRequest(ErrNameRequired.Error())
 		}
 
-		if request.Name == "" {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: "name is required"})
-			return
+		if req.StartDate == "" {
+			return nil, response.BadRequest(ErrStarDateRequired.Error())
 		}
 
-		if request.StartDate == "" {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: "start_date is required"})
-			return
+		if req.EndDate == "" {
+			return nil, response.BadRequest(ErrEndDateRequired.Error())
 		}
 
-		if request.EndDate == "" {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: "end_date is required"})
-			return
-		}
-
-		responseCourse, err := b.Create(&request)
+		responseCourse, err := b.Create(ctx, &req)
 
 		if err != nil {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: err.Error()})
-			return
+			return nil, response.InternalServerError(err.Error())
 		}
 
-		json.NewEncoder(w).Encode(&Response{Status: 201, Data: responseCourse})
+		return response.Created("Success create course", responseCourse, nil), nil
 	}
 }
 
 func makeGetAllEndpoint(b Business, config Config) Controller {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
 
-		value := r.URL.Query()
+		req := request.(GetAllReq)
 
 		filters := Filters{
-			Name: value.Get("name"),
+			Name: req.Name,
 		}
 
-		limit, _ := strconv.Atoi(value.Get("limit"))
-		page, _ := strconv.Atoi(value.Get("page"))
-
-		count, err := b.Count(filters)
+		count, err := b.Count(ctx, filters)
 
 		if err != nil {
-			w.WriteHeader(500)
-			json.NewEncoder(w).Encode(&Response{Status: 500, Err: err.Error()})
-			return
+			return nil, response.InternalServerError(err.Error())
 		}
 
-		meta, err := meta.New(page, limit, count, config.LimPageDef)
+		meta, err := meta.New(req.Page, req.Limit, count, config.LimPageDef)
 
 		if err != nil {
-			w.WriteHeader(500)
-			json.NewEncoder(w).Encode(&Response{Status: 500, Err: err.Error()})
-			return
+			return nil, response.InternalServerError(err.Error())
 		}
 
-		courses, err := b.GetAll(filters, meta.Offset(), meta.Limit())
+		courses, err := b.GetAll(ctx, filters, meta.Offset(), meta.Limit())
 
 		if err != nil {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: err.Error()})
-			return
+			return nil, response.InternalServerError(err.Error())
 		}
 
-		json.NewEncoder(w).Encode(&Response{Status: 200, Data: courses, Meta: meta})
+		return response.OK("Success get courses", courses, meta), nil
 	}
 }
 
 func makeGetEndpoint(b Business) Controller {
-	return func(w http.ResponseWriter, r *http.Request) {
-		path := mux.Vars(r)
-		id := path["id"]
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
 
-		course, err := b.Get(id)
+		req := request.(GetReq)
+
+		course, err := b.Get(ctx, req.ID)
 
 		if err != nil {
-
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: err.Error()})
-			return
+			return nil, response.NotFound(err.Error())
 		}
 
-		json.NewEncoder(w).Encode(&Response{Status: 200, Data: course})
+		return response.OK("Success get course", course, nil), nil
 	}
 }
 
 func makeDeleteEndpoint(b Business) Controller {
-	return func(w http.ResponseWriter, r *http.Request) {
-		path := mux.Vars(r)
-		id := path["id"]
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
 
-		if err := b.Delete(id); err != nil {
-			w.WriteHeader(404)
-			json.NewEncoder(w).Encode(&Response{Status: 404, Err: "Course doesn't exist"})
+		req := request.(DeleteReq)
+
+		err := b.Delete(ctx, req.ID)
+
+		if err != nil {
+
+			if errors.As(err, &ErrNotFound{}) {
+				return nil, response.NotFound(err.Error())
+			}
+
+			return nil, response.InternalServerError(err.Error())
 		}
 
-		json.NewEncoder(w).Encode(&Response{Status: 200, Data: "Successful delete"})
+		return response.OK(fmt.Sprintf("Success delete course with ID -> '%s'", req.ID), nil, nil), nil
 	}
 }
 
 func makeUpdateEndpoint(b Business) Controller {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
 
-		var request UpdateReq
+		req := request.(UpdateReq)
 
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: "Invalid request formar"})
-			return
+		if req.Name != nil && *req.Name == "" {
+			return nil, response.BadRequest(ErrNameRequired.Error())
 		}
 
-		if request.Name != nil && *request.Name == "" {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: "name is required"})
-			return
+		if req.StartDate != nil && *req.StartDate == "" {
+			return nil, response.BadRequest(ErrStarDateRequired.Error())
 		}
 
-		if request.StartDate != nil && *request.StartDate == "" {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: "start_date is required"})
-			return
+		if req.EndDate != nil && *req.EndDate == "" {
+			return nil, response.BadRequest(ErrEndDateRequired.Error())
 		}
 
-		if request.EndDate != nil && *request.EndDate == "" {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(&Response{Status: 400, Err: "end_date is required"})
-			return
+		if err := b.Update(ctx, &req); err != nil {
+
+			if err == ErrInvalidStartDate || err == ErrInvalidEndtDate {
+				return nil, response.BadRequest(err.Error())
+			}
+
+			if errors.As(err, &ErrNotFound{}) {
+				return nil, response.NotFound(err.Error())
+			}
+
+			return nil, response.InternalServerError(err.Error())
 		}
 
-		path := mux.Vars(r)
-		id := path["id"]
-
-		if err := b.Update(id, &request); err != nil {
-			w.WriteHeader(404)
-			json.NewEncoder(w).Encode(&Response{Status: 404, Err: "Course doesn't exist"})
-			return
-		}
-
-		json.NewEncoder(w).Encode(&Response{Status: 200, Data: "Successful update"})
+		return response.OK(fmt.Sprintf("Success update course with ID -> '%s'", req.ID), nil, nil), nil
 	}
 }

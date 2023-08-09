@@ -1,6 +1,7 @@
 package course
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -9,12 +10,12 @@ import (
 
 type (
 	Business interface {
-		Create(course *CreateReq) (*domain.Course, error)
-		GetAll(filters Filters, offset, limit int) ([]domain.Course, error)
-		Get(id string) (*domain.Course, error)
-		Delete(id string) error
-		Update(id string, course *UpdateReq) error
-		Count(filters Filters) (int, error)
+		Create(ctx context.Context, course *CreateReq) (*domain.Course, error)
+		GetAll(ctx context.Context, filters Filters, offset, limit int) ([]domain.Course, error)
+		Get(ctx context.Context, id string) (*domain.Course, error)
+		Delete(ctx context.Context, id string) error
+		Update(ctx context.Context, course *UpdateReq) error
+		Count(ctx context.Context, filters Filters) (int, error)
 	}
 
 	business struct {
@@ -27,6 +28,7 @@ type (
 	}
 
 	UpdateCourse struct {
+		ID        string
 		Name      *string
 		StartDate *time.Time
 		EndDate   *time.Time
@@ -40,7 +42,7 @@ func NewBusiness(log *log.Logger, repository Repository) Business {
 	}
 }
 
-func (b business) Create(request *CreateReq) (*domain.Course, error) {
+func (b business) Create(ctx context.Context, request *CreateReq) (*domain.Course, error) {
 
 	var startDateParsed, endDateParsed time.Time
 
@@ -48,7 +50,7 @@ func (b business) Create(request *CreateReq) (*domain.Course, error) {
 		date, err := time.Parse("2006-01-02", request.StartDate)
 		if err != nil {
 			b.log.Println(err)
-			return nil, err
+			return nil, ErrInvalidStartDate
 		}
 		startDateParsed = date
 	}
@@ -57,7 +59,7 @@ func (b business) Create(request *CreateReq) (*domain.Course, error) {
 		date, err := time.Parse("2006-01-02", request.StartDate)
 		if err != nil {
 			b.log.Println(err)
-			return nil, err
+			return nil, ErrInvalidEndtDate
 		}
 		endDateParsed = date
 	}
@@ -68,17 +70,16 @@ func (b business) Create(request *CreateReq) (*domain.Course, error) {
 		EndDate:   endDateParsed,
 	}
 
-	if err := b.repository.Create(&course); err != nil {
+	if err := b.repository.Create(ctx, &course); err != nil {
 		return nil, err
 	}
 
 	return &course, nil
 }
 
-func (b business) GetAll(filters Filters, offset, limit int) ([]domain.Course, error) {
+func (b business) GetAll(ctx context.Context, filters Filters, offset, limit int) ([]domain.Course, error) {
 
-	b.log.Println("GetAll course Business")
-	courses, err := b.repository.GetAll(filters, offset, limit)
+	courses, err := b.repository.GetAll(ctx, filters, offset, limit)
 
 	if err != nil {
 		return nil, err
@@ -87,10 +88,9 @@ func (b business) GetAll(filters Filters, offset, limit int) ([]domain.Course, e
 	return courses, nil
 }
 
-func (b business) Get(id string) (*domain.Course, error) {
+func (b business) Get(ctx context.Context, id string) (*domain.Course, error) {
 
-	b.log.Println("Get course Business")
-	course, err := b.repository.Get(id)
+	course, err := b.repository.Get(ctx, id)
 
 	if err != nil {
 		return nil, err
@@ -99,45 +99,43 @@ func (b business) Get(id string) (*domain.Course, error) {
 	return course, nil
 }
 
-func (b business) Delete(id string) error {
+func (b business) Delete(ctx context.Context, id string) error {
 
-	b.log.Println("Delete course Business")
-	return b.repository.Delete(id)
+	return b.repository.Delete(ctx, id)
 }
 
-func (b business) Update(id string, course *UpdateReq) error {
-
-	b.log.Println("Update course Business")
+func (b business) Update(ctx context.Context, request *UpdateReq) error {
 
 	var startDateParsed, endDateParsed *time.Time
 
-	if course.StartDate != nil {
-		date, err := time.Parse("2006-01-02", *course.StartDate)
+	if request.StartDate != nil {
+		date, err := time.Parse("2006-01-02", *request.StartDate)
 		if err != nil {
 			b.log.Println(err)
-			return err
+			return ErrInvalidStartDate
 		}
 		startDateParsed = &date
 	}
 
-	if course.EndDate != nil {
-		date, err := time.Parse("2006-01-02", *course.StartDate)
+	if request.EndDate != nil {
+		date, err := time.Parse("2006-01-02", *request.StartDate)
 		if err != nil {
 			b.log.Println(err)
-			return err
+			return ErrInvalidEndtDate
 		}
 		endDateParsed = &date
 	}
 
 	courseUpdate := UpdateCourse{
-		Name:      course.Name,
+		ID:        request.ID,
+		Name:      request.Name,
 		StartDate: startDateParsed,
 		EndDate:   endDateParsed,
 	}
 
-	return b.repository.Update(id, &courseUpdate)
+	return b.repository.Update(ctx, &courseUpdate)
 }
 
-func (b business) Count(filters Filters) (int, error) {
-	return b.repository.Count(filters)
+func (b business) Count(ctx context.Context, filters Filters) (int, error) {
+	return b.repository.Count(ctx, filters)
 }

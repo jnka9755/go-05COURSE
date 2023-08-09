@@ -1,6 +1,7 @@
 package course
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -12,12 +13,12 @@ import (
 
 type (
 	Repository interface {
-		Create(course *domain.Course) error
-		GetAll(filters Filters, offset, limit int) ([]domain.Course, error)
-		Get(id string) (*domain.Course, error)
-		Delete(id string) error
-		Update(id string, course *UpdateCourse) error
-		Count(filters Filters) (int, error)
+		Create(ctx context.Context, course *domain.Course) error
+		GetAll(ctx context.Context, filters Filters, offset, limit int) ([]domain.Course, error)
+		Get(ctx context.Context, id string) (*domain.Course, error)
+		Delete(ctx context.Context, id string) error
+		Update(ctx context.Context, course *UpdateCourse) error
+		Count(ctx context.Context, filters Filters) (int, error)
 	}
 
 	repository struct {
@@ -34,10 +35,10 @@ func NewRepository(l *log.Logger, db *gorm.DB) Repository {
 	}
 }
 
-func (r *repository) Create(course *domain.Course) error {
+func (r *repository) Create(ctx context.Context, course *domain.Course) error {
 
-	if err := r.db.Create(course).Error; err != nil {
-		r.log.Println("Repository ->", err)
+	if err := r.db.WithContext(ctx).Create(course).Error; err != nil {
+		r.log.Println("Error-Repository CreateCourse->", err)
 		return err
 	}
 
@@ -46,43 +47,55 @@ func (r *repository) Create(course *domain.Course) error {
 	return nil
 }
 
-func (r *repository) GetAll(filters Filters, offset, limit int) ([]domain.Course, error) {
+func (r *repository) GetAll(ctx context.Context, filters Filters, offset, limit int) ([]domain.Course, error) {
 
-	r.log.Println("GetAll course Repository")
 	var courses []domain.Course
 
-	tx := r.db.Model(&courses)
+	tx := r.db.WithContext(ctx).Model(&courses)
 	tx = applyFilters(tx, filters)
 	tx = tx.Limit(limit).Offset(offset)
 
 	result := tx.Order("created_at desc").Find(&courses)
 
 	if result.Error != nil {
+		r.log.Println("Error-Repository GetAllCourses ->", result.Error)
 		return nil, result.Error
 	}
 
 	return courses, nil
 }
 
-func (r *repository) Get(id string) (*domain.Course, error) {
+func (r *repository) Get(ctx context.Context, id string) (*domain.Course, error) {
 
-	r.log.Println("Get course Repository")
 	course := domain.Course{ID: id}
 
-	if err := r.db.First(&course).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&course).Error; err != nil {
+		r.log.Println("Error-Repository GetCourse ->", err)
+
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrNotFound{id}
+		}
+
 		return nil, err
 	}
 
 	return &course, nil
 }
 
-func (r *repository) Delete(id string) error {
+func (r *repository) Delete(ctx context.Context, id string) error {
 
-	r.log.Println("Delete course Repository")
 	course := domain.Course{ID: id}
 
-	if err := r.db.Delete(&course).Error; err != nil {
-		return err
+	result := r.db.WithContext(ctx).Delete(&course)
+
+	if result.Error != nil {
+		r.log.Println("Error-Repository DeleteCourse ->", result.Error)
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		r.log.Printf("Course with ID -> '%s' doesn't exist", course.ID)
+		return ErrNotFound{id}
 	}
 
 	r.log.Println("Repository -> Delete course with id: ", course.ID)
@@ -90,7 +103,7 @@ func (r *repository) Delete(id string) error {
 	return nil
 }
 
-func (r *repository) Update(id string, course *UpdateCourse) error {
+func (r *repository) Update(ctx context.Context, course *UpdateCourse) error {
 
 	r.log.Println("Udate course Repository")
 
@@ -108,20 +121,29 @@ func (r *repository) Update(id string, course *UpdateCourse) error {
 		values["end_date"] = *course.EndDate
 	}
 
-	if err := r.db.Model(&domain.Course{}).Where("id = ?", id).Updates(values).Error; err != nil {
-		return err
+	result := r.db.WithContext(ctx).Model(&domain.Course{}).Where("id = ?", course.ID).Updates(values)
+
+	if result.Error != nil {
+		r.log.Println("Error-Repository UdateCourse ->", result.Error)
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		r.log.Printf("User with ID -> '%s' doesn't exist", course.ID)
+		return ErrNotFound{course.ID}
 	}
 
 	return nil
 }
 
-func (r *repository) Count(filters Filters) (int, error) {
+func (r *repository) Count(ctx context.Context, filters Filters) (int, error) {
 
 	var count int64
 	tx := r.db.Model(domain.Course{})
 	tx = applyFilters(tx, filters)
 
 	if err := tx.Count(&count).Error; err != nil {
+		r.log.Println("Error-Repository CountCourse ->", err)
 		return 0, err
 	}
 
