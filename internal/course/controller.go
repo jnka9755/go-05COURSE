@@ -83,6 +83,14 @@ func makeCreateEndpoint(b Business) Controller {
 		responseCourse, err := b.Create(ctx, &req)
 
 		if err != nil {
+
+			if err == ErrInvalidStartDate ||
+				err == ErrInvalidEndtDate ||
+				err == ErrEndDateHigherStart ||
+				err == ErrEqualDates {
+				return nil, response.BadRequest(err.Error())
+			}
+
 			return nil, response.InternalServerError(err.Error())
 		}
 
@@ -175,7 +183,10 @@ func makeUpdateEndpoint(b Business) Controller {
 
 		if err := b.Update(ctx, &req); err != nil {
 
-			if err == ErrInvalidStartDate || err == ErrInvalidEndtDate {
+			if err == ErrInvalidStartDate ||
+				err == ErrInvalidEndtDate ||
+				err == ErrEndDateHigherStart ||
+				err == ErrEqualDates {
 				return nil, response.BadRequest(err.Error())
 			}
 

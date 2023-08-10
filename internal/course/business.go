@@ -44,24 +44,26 @@ func NewBusiness(log *log.Logger, repository Repository) Business {
 
 func (b business) Create(ctx context.Context, request *CreateReq) (*domain.Course, error) {
 
-	var startDateParsed, endDateParsed time.Time
-
-	if request.StartDate != "" {
-		date, err := time.Parse("2006-01-02", request.StartDate)
-		if err != nil {
-			b.log.Println(err)
-			return nil, ErrInvalidStartDate
-		}
-		startDateParsed = date
+	startDateParsed, err := time.Parse("2006-01-02", request.StartDate)
+	if err != nil {
+		b.log.Println(err)
+		return nil, ErrInvalidStartDate
 	}
 
-	if request.EndDate != "" {
-		date, err := time.Parse("2006-01-02", request.StartDate)
-		if err != nil {
-			b.log.Println(err)
-			return nil, ErrInvalidEndtDate
-		}
-		endDateParsed = date
+	endDateParsed, err := time.Parse("2006-01-02", request.EndDate)
+	if err != nil {
+		b.log.Println(err)
+		return nil, ErrInvalidEndtDate
+	}
+
+	if startDateParsed.After(endDateParsed) {
+		b.log.Println(ErrEndDateHigherStart)
+		return nil, ErrEndDateHigherStart
+	}
+
+	if startDateParsed.Equal(endDateParsed) {
+		b.log.Println(ErrEqualDates)
+		return nil, ErrEqualDates
 	}
 
 	course := domain.Course{
@@ -108,21 +110,38 @@ func (b business) Update(ctx context.Context, request *UpdateReq) error {
 
 	var startDateParsed, endDateParsed *time.Time
 
+	course, err := b.repository.Get(ctx, request.ID)
+	if err != nil {
+		return err
+	}
+
 	if request.StartDate != nil {
 		date, err := time.Parse("2006-01-02", *request.StartDate)
 		if err != nil {
 			b.log.Println(err)
 			return ErrInvalidStartDate
 		}
+
+		if date.After(course.EndDate) {
+			b.log.Println(ErrEndDateHigherStart)
+			return ErrEndDateHigherStart
+		}
+
 		startDateParsed = &date
 	}
 
 	if request.EndDate != nil {
-		date, err := time.Parse("2006-01-02", *request.StartDate)
+		date, err := time.Parse("2006-01-02", *request.EndDate)
 		if err != nil {
 			b.log.Println(err)
 			return ErrInvalidEndtDate
 		}
+
+		if course.StartDate.After(date) {
+			b.log.Println(ErrEndDateHigherStart)
+			return ErrEndDateHigherStart
+		}
+
 		endDateParsed = &date
 	}
 
@@ -133,7 +152,11 @@ func (b business) Update(ctx context.Context, request *UpdateReq) error {
 		EndDate:   endDateParsed,
 	}
 
-	return b.repository.Update(ctx, &courseUpdate)
+	if err := b.repository.Update(ctx, &courseUpdate); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (b business) Count(ctx context.Context, filters Filters) (int, error) {
