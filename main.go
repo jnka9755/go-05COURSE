@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jnka9755/go-05COURSE/internal/course"
-	"github.com/jnka9755/go-05COURSE/package/boostrap"
+	"github.com/jnka9755/go-05COURSE/package/bootstrap"
 	"github.com/jnka9755/go-05COURSE/package/handler"
 	"github.com/joho/godotenv"
 )
@@ -16,8 +16,8 @@ import (
 func main() {
 
 	_ = godotenv.Load()
-	log := boostrap.InitLooger()
-	db, err := boostrap.DBConnection()
+	log := bootstrap.InitLooger()
+	db, err := bootstrap.DBConnection()
 
 	if err != nil {
 		log.Fatal(err)
