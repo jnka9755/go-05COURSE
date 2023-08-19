@@ -129,7 +129,7 @@ func (r *repository) Update(ctx context.Context, course *UpdateCourse) error {
 	}
 
 	if result.RowsAffected == 0 {
-		r.log.Printf("User with ID -> '%s' doesn't exist", course.ID)
+		r.log.Printf("Course with ID -> '%s' doesn't exist", course.ID)
 		return ErrNotFound{course.ID}
 	}
 
@@ -139,7 +139,7 @@ func (r *repository) Update(ctx context.Context, course *UpdateCourse) error {
 func (r *repository) Count(ctx context.Context, filters Filters) (int, error) {
 
 	var count int64
-	tx := r.db.Model(domain.Course{})
+	tx := r.db.WithContext(ctx).Model(domain.Course{})
 	tx = applyFilters(tx, filters)
 
 	if err := tx.Count(&count).Error; err != nil {
