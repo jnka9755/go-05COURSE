@@ -7,57 +7,62 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-kit/kit/endpoint"
 	httptransport "github.com/go-kit/kit/transport/http"
-	"github.com/gorilla/mux"
 	"github.com/jnka9755/go-05COURSE/internal/course"
 	"github.com/jnka9755/go-05RESPONSE/response"
 )
 
 func NewCourseHTTPServer(ctx context.Context, endpoints course.Endpoints) http.Handler {
 
-	r := mux.NewRouter()
+	r := gin.Default()
 
 	opts := []httptransport.ServerOption{
 		httptransport.ServerErrorEncoder(encodeError),
 	}
 
-	r.Handle("/courses", httptransport.NewServer(
+	r.POST("/courses", gin.WrapH(httptransport.NewServer(
 		endpoint.Endpoint(endpoints.Create),
 		decodeCreateCourse, encodeResponse,
 		opts...,
-	)).Methods("POST")
+	)))
 
-	r.Handle("/courses/{id}", httptransport.NewServer(
+	r.GET("/courses/:id", ginDecode, gin.WrapH(httptransport.NewServer(
 		endpoint.Endpoint(endpoints.Get),
 		decodeGetCourse,
 		encodeResponse,
 		opts...,
-	)).Methods("GET")
+	)))
 
-	r.Handle("/courses", httptransport.NewServer(
+	r.GET("/courses", gin.WrapH(httptransport.NewServer(
 		endpoint.Endpoint(endpoints.GetAll),
 		decodeGetAllCourses,
 		encodeResponse,
 		opts...,
-	)).Methods("GET")
+	)))
 
-	r.Handle("/courses/{id}", httptransport.NewServer(
+	r.PATCH("/courses/:id", ginDecode, gin.WrapH(httptransport.NewServer(
 		endpoint.Endpoint(endpoints.Update),
 		decodeUpdateCourse,
 		encodeResponse,
 		opts...,
-	)).Methods("PATCH")
+	)))
 
-	r.Handle("/courses/{id}", httptransport.NewServer(
+	r.DELETE("/courses/:id", ginDecode, gin.WrapH(httptransport.NewServer(
 		endpoint.Endpoint(endpoints.Delete),
 		decodeDeleteCourse,
 		encodeResponse,
 		opts...,
-	)).Methods("DELETE")
+	)))
 
 	return r
+}
 
+func ginDecode(c *gin.Context) {
+
+	ctx := context.WithValue(c.Request.Context(), "params", c.Params)
+	c.Request = c.Request.WithContext(ctx)
 }
 
 func decodeCreateCourse(_ context.Context, r *http.Request) (interface{}, error) {
@@ -71,11 +76,12 @@ func decodeCreateCourse(_ context.Context, r *http.Request) (interface{}, error)
 	return req, nil
 }
 
-func decodeGetCourse(_ context.Context, r *http.Request) (interface{}, error) {
+func decodeGetCourse(ctx context.Context, r *http.Request) (interface{}, error) {
 
-	p := mux.Vars(r)
+	params := ctx.Value("params").(gin.Params)
+
 	req := course.GetReq{
-		ID: p["id"],
+		ID: params.ByName("id"),
 	}
 
 	return req, nil
@@ -97,7 +103,7 @@ func decodeGetAllCourses(_ context.Context, r *http.Request) (interface{}, error
 	return req, nil
 }
 
-func decodeUpdateCourse(_ context.Context, r *http.Request) (interface{}, error) {
+func decodeUpdateCourse(ctx context.Context, r *http.Request) (interface{}, error) {
 
 	var req course.UpdateReq
 
@@ -105,17 +111,19 @@ func decodeUpdateCourse(_ context.Context, r *http.Request) (interface{}, error)
 		return nil, response.BadRequest(fmt.Sprintf("Invalid request format: '%v'", err.Error()))
 	}
 
-	p := mux.Vars(r)
-	req.ID = p["id"]
+	params := ctx.Value("params").(gin.Params)
+
+	req.ID = params.ByName("id")
 
 	return req, nil
 }
 
-func decodeDeleteCourse(_ context.Context, r *http.Request) (interface{}, error) {
+func decodeDeleteCourse(ctx context.Context, r *http.Request) (interface{}, error) {
 
-	p := mux.Vars(r)
+	params := ctx.Value("params").(gin.Params)
+
 	req := course.DeleteReq{
-		ID: p["id"],
+		ID: params.ByName("id"),
 	}
 
 	return req, nil
